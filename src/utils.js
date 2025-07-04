@@ -1,34 +1,42 @@
 /**
- * Construiește mesajul WebSocket pentru Messenger, cu prefix binar + path + payload JSON stringificat
- * @param {string} path - comanda, ex: "/ls_req"
- * @param {string} jsonPayload - payload JSON stringificat
- * @returns {Buffer} - buffer care conține mesajul binar
+ * Escapează un string JSON pentru a putea fi inclus dublu în JSON payload (backslash dublu)
+ * Ex: " -> \\", \ -> \\
  */
-export function buildWsMessage(path, jsonPayload) {
-  // Simplificat: construim un buffer cu prefixurile necesare conform analizelor tale
-  // (în realitate, trebuie să adaptezi la protocolul exact)
-  
-  const prefix = Buffer.from([0x32, 0x1, 0x0, path.length]); // exemplu simplificat
-  const pathBuf = Buffer.from(path, 'utf-8');
-  const payloadBuf = Buffer.from(jsonPayload, 'utf-8');
-  
-  return Buffer.concat([prefix, pathBuf, Buffer.from([0x0]), payloadBuf]);
+export function doubleEscapeJson(jsonString) {
+  return jsonString.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 /**
- * Decodează un mesaj primit, extrage payload JSON
- * @param {Buffer} data - date brute primite
- * @returns {object} - obiect JSON extras
+ * Construiește un mesaj binar pentru WebSocket Messenger, conform protocolului observat:
+ * Prefix: 1 byte '2' (0x32), urmat de 3-4 bytes fix, apoi comanda (/ls_req) + \0 + payload JSON.
+ * @param {string} path Comanda, ex: "/ls_req"
+ * @param {object} payload Obiect JSON ce va fi dublu escape-uit și inclus în payload
+ * @returns {Buffer} Buffer cu mesajul binar complet
  */
-export function parseWsMessage(data) {
-  // Exemple minimal: găsește primul 0x00 după path și extrage JSON
-  const zeroIndex = data.indexOf(0x00);
-  if (zeroIndex === -1) return null;
-  
-  const jsonStr = data.slice(zeroIndex + 1).toString('utf-8');
-  try {
-    return JSON.parse(jsonStr);
-  } catch {
-    return null;
-  }
+export function buildLsReqMessage(path, payload) {
+  // Stringifică payload în JSON
+  const jsonPayload = JSON.stringify(payload);
+  // Double escape
+  const escapedPayload = doubleEscapeJson(jsonPayload);
+
+  // Construiește JSON complet pentru mesaj
+  const messageObj = {
+    app_id: "772021112871879",
+    payload: escapedPayload,
+    request_id: payload.request_id || 1,
+    type: payload.type || 3
+  };
+
+  const messageJson = JSON.stringify(messageObj);
+
+  // Construim bufferul final
+
+  // Prefix exemplu observat: [0x32, 0x02, 0x00, 0x07]
+  // 0x32 = '2', 0x07 = lungime path ("/ls_req".length)
+  const prefix = Buffer.from([0x32, 0x02, 0x00, path.length]);
+  const pathBuf = Buffer.from(path, 'utf-8');
+  const zeroBuf = Buffer.from([0x00]);
+  const messageBuf = Buffer.from(messageJson, 'utf-8');
+
+  return Buffer.concat([prefix, pathBuf, zeroBuf, messageBuf]);
 }
